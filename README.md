@@ -92,14 +92,14 @@ The audit script is configured through environment variables:
 | `EXPORT_ROOT` | target project root | Where output is written |
 | `ROUTES` | auto-discovered from `out/**/index.html`, fallback `/` | Comma-separated route list |
 | `VIEWPORTS` | all presets | Comma-separated viewport preset names |
-| `CUSTOM_VIEWPORTS` | empty | Extra viewports, format `name:widthxheight,name2:widthxheight` |
+| `CUSTOM_VIEWPORTS` | empty | Extra viewports as JSON or shorthand `name:widthxheight[:desktop|tablet|mobile]` |
 | `CONSENT` | `0` | Set `1` to inject a localStorage consent payload |
 | `CONSENT_KEY` | `pt-cookie-consent-v1` | Consent localStorage key |
 | `CONSENT_PAYLOAD` | analytics/marketing denied JSON | Consent localStorage value |
 | `REDUCE` | `1` | Emulate reduced motion |
 | `HERO` | `1` | Capture first viewport screenshots in capture mode |
-| `FULL` | `0` | Capture full-page screenshots in capture mode |
-| `SLICES` | `0` | Capture scroll slices in capture mode |
+| `FULL` | `0` | Capture full-page screenshots in capture mode when set to `1` |
+| `SLICES` | `0` | Capture scroll slices in capture mode when set to `1` |
 | `CAPTURE_DELAY` | `450` | Wait time after load before screenshots/checks |
 
 ## Viewport Presets
@@ -126,8 +126,8 @@ Tablet and iPad:
 Phones:
 
 - `phone-large-430x932`
-- `phone-medium-393x852`
-- `iphone-12-390x844`
+- `phone-393x852`
+- `phone-390x844`
 - `phone-small-360x800`
 
 ## Outputs

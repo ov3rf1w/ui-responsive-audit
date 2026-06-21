@@ -45,6 +45,8 @@ Use DOM geometry before screenshots to target likely defects:
 - **Layer conflict:** when text/button overlays an `img`, `video`, or `canvas`, the text/button must appear above media at sampled points.
 - **Reduced motion:** run the same audit with `reducedMotion: "reduce"`; hidden reveal elements under reduced motion are correctness defects.
 
+Treat unknown viewport names as audit setup failures. A missing screenshot because a preset was misspelled is worse than a loud script error.
+
 Treat these as triage, not final judgment. Some overlaps are intentional: badges on images, cards over media, sticky nav over hero. When an overlap is intentional, verify z-order and readability with a targeted screenshot.
 
 ## 3. Person and hero image crop checks

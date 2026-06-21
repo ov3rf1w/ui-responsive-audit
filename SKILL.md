@@ -78,6 +78,8 @@ Useful environment:
 - `EXPORT_ROOT=out`
 - `VIEWPORTS="desktop-1440x900,ipad-mini-portrait-768x1024,phone-393x852"`
 - `CUSTOM_VIEWPORTS='[{"name":"custom-820x1180","width":820,"height":1180,"device":"tablet"}]'`
+  - Shorthand is also supported: `CUSTOM_VIEWPORTS="custom-820x1180:820x1180:tablet"`.
+  - Unknown `VIEWPORTS` names must fail the run. Do not accept silently skipped breakpoints.
 - `CONSENT=1`
 - `SERIES=hero-sample`
 - `HERO=1 FULL=0 SLICES=0`

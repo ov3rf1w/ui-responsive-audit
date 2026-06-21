@@ -11,8 +11,8 @@ const MODE = process.env.MODE || "audit";
 const OUT = path.resolve(projectRoot, process.env.OUT || "output/playwright/ui-responsive-audit");
 const SERIES = process.env.SERIES ? `-${process.env.SERIES.replace(/[^a-z0-9_-]/gi, "-")}` : "";
 const CAPTURE_HERO = process.env.HERO !== "0";
-const CAPTURE_FULL = process.env.FULL !== "0";
-const CAPTURE_SLICES = process.env.SLICES !== "0";
+const CAPTURE_FULL = process.env.FULL === "1";
+const CAPTURE_SLICES = process.env.SLICES === "1";
 const CAPTURE_DELAY = Number(process.env.CAPTURE_DELAY || 1800);
 
 const EXPORT_ROOT = path.resolve(projectRoot, process.env.EXPORT_ROOT || "out");
@@ -37,11 +37,50 @@ const PRESET_VIEWPORTS = [
   { name: "phone-small-360x800", width: 360, height: 800, device: "mobile" },
 ];
 
-const CUSTOM_VIEWPORTS = process.env.CUSTOM_VIEWPORTS ? JSON.parse(process.env.CUSTOM_VIEWPORTS) : [];
+function parseCustomViewports() {
+  const raw = process.env.CUSTOM_VIEWPORTS?.trim();
+  if (!raw) return [];
+
+  if (raw.startsWith("[")) {
+    return JSON.parse(raw);
+  }
+
+  return raw.split(",").map((entry) => {
+    const match = entry.trim().match(/^([a-z0-9_-]+):(\d+)x(\d+)(?::(desktop|tablet|mobile))?$/i);
+    if (!match) {
+      throw new Error(
+        `Invalid CUSTOM_VIEWPORTS entry "${entry}". Use JSON or name:widthxheight[:desktop|tablet|mobile].`,
+      );
+    }
+
+    return {
+      name: match[1],
+      width: Number(match[2]),
+      height: Number(match[3]),
+      device: match[4] || "custom",
+    };
+  });
+}
+
+function selectViewports(allViewports) {
+  if (!process.env.VIEWPORTS) return allViewports;
+
+  const requested = process.env.VIEWPORTS.split(",").map((name) => name.trim()).filter(Boolean);
+  const byName = new Map(allViewports.map((viewport) => [viewport.name, viewport]));
+  const missing = requested.filter((name) => !byName.has(name));
+
+  if (missing.length > 0) {
+    throw new Error(
+      `Unknown VIEWPORTS value(s): ${missing.join(", ")}. Available: ${allViewports.map((viewport) => viewport.name).join(", ")}`,
+    );
+  }
+
+  return requested.map((name) => byName.get(name));
+}
+
+const CUSTOM_VIEWPORTS = parseCustomViewports();
 const ALL_VIEWPORTS = [...PRESET_VIEWPORTS, ...CUSTOM_VIEWPORTS];
-const VIEWPORTS = process.env.VIEWPORTS
-  ? ALL_VIEWPORTS.filter((viewport) => process.env.VIEWPORTS.split(",").includes(viewport.name))
-  : ALL_VIEWPORTS;
+const VIEWPORTS = selectViewports(ALL_VIEWPORTS);
 
 async function discoverRoutes() {
   if (process.env.ROUTES) {

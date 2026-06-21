@@ -35,10 +35,11 @@ confirming that the capture state is useful.
    - If a person image is used, the head/face must be visible unless an intentional art direction says otherwise. A body-only crop is a defect.
 
 5. **Run non-visual and section audits.**
-   - Use the script in `MODE=audit` for overflow, broken images, tap targets, hidden reduced-motion content, element occlusion, layering conflicts, and person-image crop risks.
+   - Use the script in `MODE=audit` for overflow, broken images, tap targets, hidden reduced-motion content, element occlusion, layering conflicts, person-image crop risks, and static content collisions.
    - Keep `SECTION_AUDIT=1` unless the task is explicitly hero-only.
    - Include midpage sections that commonly fail on tablets: reviews/testimonials, pricing, package cards, process steps, CTA bands, comparison grids, sticky panels, and media-over-card layouts.
    - Check the normal scroll state, not only `scrollIntoViewIfNeeded`. Fixed headers, cookie layers, sticky rails, and chat widgets must not cover section content.
+   - Check static sibling collisions inside sections. Large headings must not visually run into paragraphs, cards, tables, or definition lists.
    - Treat audit findings as triage. Confirm likely false positives with targeted screenshots.
 
 6. **Fix and re-check only affected states.**
@@ -148,6 +149,7 @@ Hard failures:
 - text/buttons visually occluded by another element
 - overlay content intended to sit above media but rendered underneath
 - fixed/sticky headers, cookie layers, chat widgets, or sticky rails covering midpage section content
+- headings, paragraphs, cards, tables, or definition lists overlapping inside the same section
 - person/portrait image crop risk where the top/head area is cut away
 
 Visual quality failures:

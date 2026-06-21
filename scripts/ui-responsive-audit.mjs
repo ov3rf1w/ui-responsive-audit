@@ -553,6 +553,52 @@ async function getSectionAudit(page, sectionIndex, label, scrollMode) {
         }
       }
 
+      const staticTargets = [...section.querySelectorAll("h1,h2,h3,h4,p,blockquote,dl,table,article,[class*='card'],[class*='panel']")]
+        .filter((el) => visible(el))
+        .filter((el) => (el.innerText || el.textContent || "").trim())
+        .slice(0, 90);
+      const staticContentCollisions = [];
+      for (let i = 0; i < staticTargets.length; i += 1) {
+        for (let j = i + 1; j < staticTargets.length; j += 1) {
+          const first = staticTargets[i];
+          const second = staticTargets[j];
+          if (first.contains(second) || second.contains(first)) continue;
+
+          const firstRect = first.getBoundingClientRect();
+          const secondRect = second.getBoundingClientRect();
+          if (!intersects(firstRect, secondRect) || area(firstRect, secondRect) < 180) continue;
+
+          const firstStyle = getComputedStyle(first);
+          const secondStyle = getComputedStyle(second);
+          const firstText = (first.innerText || first.textContent || "").trim();
+          const secondText = (second.innerText || second.textContent || "").trim();
+          const headingPair = /^H[1-4]$/.test(first.tagName) || /^H[1-4]$/.test(second.tagName);
+          const visibleTextPair = firstText.length > 0 && secondText.length > 0;
+          const nonDecorative =
+            firstStyle.pointerEvents !== "none" &&
+            secondStyle.pointerEvents !== "none" &&
+            Number.parseFloat(firstStyle.opacity || "1") > 0.08 &&
+            Number.parseFloat(secondStyle.opacity || "1") > 0.08;
+
+          if (!visibleTextPair || !nonDecorative) continue;
+
+          const x = Math.round((Math.max(firstRect.left, secondRect.left) + Math.min(firstRect.right, secondRect.right)) / 2);
+          const y = Math.round((Math.max(firstRect.top, secondRect.top) + Math.min(firstRect.bottom, secondRect.bottom)) / 2);
+          const stack = document.elementsFromPoint(x, y);
+          const firstIndex = stack.findIndex((node) => node === first || first.contains(node) || node.contains(first));
+          const secondIndex = stack.findIndex((node) => node === second || second.contains(node) || node.contains(second));
+
+          if (headingPair || firstIndex >= 0 || secondIndex >= 0) {
+            staticContentCollisions.push({
+              first: describe(first),
+              second: describe(second),
+              point: [x, y],
+              reason: headingPair ? "heading-content-overlap" : "content-overlap",
+            });
+          }
+        }
+      }
+
       const clippedText = [...section.querySelectorAll("*")]
         .filter((el) => visible(el))
         .filter((el) => (el.innerText || el.textContent || "").trim())
@@ -584,6 +630,7 @@ async function getSectionAudit(page, sectionIndex, label, scrollMode) {
           height: Math.round(sectionRect.height),
         },
         fixedOrStickyOverlayCollisions: overlayCollisions.slice(0, 20),
+        staticContentCollisions: staticContentCollisions.slice(0, 20),
         clippedText,
         cookieLayer,
       };
@@ -731,7 +778,11 @@ try {
       result.occlusions?.length ||
       result.layerConflicts?.length ||
       result.personCropRisks?.length ||
-      result.sectionAudits?.some((section) => section.fixedOrStickyOverlayCollisions?.length || section.cookieLayer?.length),
+      result.sectionAudits?.some((section) =>
+        section.fixedOrStickyOverlayCollisions?.length ||
+        section.staticContentCollisions?.length ||
+        section.cookieLayer?.length,
+      ),
     );
     const tapHints = results.filter((result) => result.smallTapTargets?.length);
     console.log(JSON.stringify({ reportPath, resultCount: results.length, failureCount: failures.length, tapHintCount: tapHints.length }, null, 2));

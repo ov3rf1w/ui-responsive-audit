@@ -22,7 +22,7 @@ const types = {
 
 function resolveRequest(urlPath) {
   const decoded = decodeURIComponent((urlPath || "/").split("?")[0]);
-  const safePath = path.normalize(decoded).replace(/^(\.\.[/\\])+/, "");
+  const safePath = path.normalize(decoded).replace(/^(\.\.[/\\])+/, "").replace(/^[/\\]+/, "");
   const candidate = path.join(root, safePath);
 
   for (const file of [candidate, path.join(candidate, "index.html"), `${candidate}.html`]) {

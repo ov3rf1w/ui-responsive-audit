@@ -44,6 +44,7 @@ Use DOM geometry before screenshots to target likely defects:
 - **Text clipping:** list elements where `scrollWidth > clientWidth` or `scrollHeight > clientHeight`.
 - **Occlusion:** sample points inside text/button elements and compare `elementFromPoint`/`elementsFromPoint` to expected element ancestry.
 - **Layer conflict:** when text/button overlays an `img`, `video`, or `canvas`, the text/button must appear above media at sampled points.
+- **Static content collision:** compare visible heading, paragraph, card, table, definition-list, and panel rectangles inside each section. Large display headings must not overlap sibling content even when `overflow: visible` prevents scroll-width/clipping signals.
 - **Reduced motion:** run the same audit with `reducedMotion: "reduce"`; hidden reveal elements under reduced motion are correctness defects.
 
 Treat unknown viewport names as audit setup failures. A missing screenshot because a preset was misspelled is worse than a loud script error.
@@ -113,6 +114,12 @@ Fixed/sticky overlay collisions should include:
 - cookie banner over final screenshots
 - chat widget over CTA/buttons
 - sticky rail covering content it should sit beside
+
+Static section collisions should include:
+- oversized headings crossing into paragraph columns
+- card grids whose cards overlap instead of wrapping
+- definition lists or tables sitting under display text
+- sibling content overlap caused by CSS grid/flex sizing, `overflow: visible`, negative margins, transforms, or long unbreakable words
 
 Use `SECTION_SCREENSHOTS=1` for affected routes and tablet viewports. These screenshots must be viewport screenshots after scroll, not isolated element screenshots, because fixed overlays disappear from isolated element crops.
 

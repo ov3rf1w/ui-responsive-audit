@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0 - 2026-06-21
+
+- Added static sibling-content collision detection inside section audits.
+- Added detection for oversized headings crossing into paragraphs, cards, tables, panels, or definition lists without triggering page overflow.
+- Fixed Windows static-server route resolution for nested routes such as `/standorte/`.
+
 ## 0.2.0 - 2026-06-21
 
 - Added midpage section audits for reviews, pricing, CTAs, cards, sticky panels, and other non-hero sections.

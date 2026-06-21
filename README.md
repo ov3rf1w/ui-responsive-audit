@@ -16,6 +16,7 @@ The skill is built for Structiva-style UI QA: production builds, real browser re
 - Person-image crop risk, especially head and face crops on portrait/tablet layouts
 - Midpage section checks for reviews, pricing, CTA bands, card grids, sticky panels, and other non-hero sections
 - Fixed/sticky overlay collision checks, including headers, cookie layers, chat widgets, and sticky rails
+- Static sibling-content collision checks, including oversized headings crossing into paragraphs, cards, tables, or definition lists
 - Cookie-overlay handling and repeatable consent state
 - Hero, section, full-page, and scroll-slice screenshot series
 
@@ -142,6 +143,8 @@ node "$env:USERPROFILE\.codex\skills\ui-responsive-audit\scripts\ui-responsive-a
 
 Section screenshots are viewport screenshots after scroll, not isolated element crops. That is intentional: fixed headers, cookie banners, chat widgets, and sticky rails must remain visible if they cover content.
 
+The section audit also compares visible content rectangles inside a section. This catches issues that do not create page overflow, such as a huge display heading visually entering a neighboring text column while `overflow: visible` keeps the browser from reporting clipping.
+
 ## Viewport Presets
 
 Desktop:
@@ -193,7 +196,7 @@ The manifest includes the route, viewport, URL, screenshot type, and dimensions 
 3. Review whether captures are stable, useful, and represent the real page state.
 4. Run audit mode over the full viewport/route matrix.
 5. Run a section audit for critical midpage selectors, especially on tablet/iPad widths.
-6. Fix hard failures first: overflow, clipping, broken images, bad crop risk, overlap, fixed/sticky overlay collisions, and layering conflicts.
+6. Fix hard failures first: overflow, clipping, broken images, bad crop risk, static content overlap, fixed/sticky overlay collisions, and layering conflicts.
 7. Re-run audit mode on affected routes.
 8. Capture the final screenshot series for user review.
 9. Report exact audit paths, screenshot folders, and remaining risks.

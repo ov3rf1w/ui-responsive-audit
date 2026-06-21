@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0 - 2026-06-21
+
+- Added midpage section audits for reviews, pricing, CTAs, cards, sticky panels, and other non-hero sections.
+- Added fixed/sticky overlay collision detection for section content.
+- Added `SECTIONS`, `SECTION_AUDIT`, `SECTION_SCROLL_MODE`, `SECTION_LIMIT`, and `SECTION_SCREENSHOTS`.
+- Added section viewport screenshots so fixed headers, cookie banners, and sticky overlays remain visible in evidence captures.
+- Documented the normal-scroll versus direct-scroll distinction for tablet/header issues.
+
 ## 0.1.0 - 2026-06-21
 
 - Initial Codex skill release.

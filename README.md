@@ -14,8 +14,10 @@ The skill is built for Structiva-style UI QA: production builds, real browser re
 - Element overlap and z-index conflicts
 - Text and UI layers that accidentally fall behind media
 - Person-image crop risk, especially head and face crops on portrait/tablet layouts
+- Midpage section checks for reviews, pricing, CTA bands, card grids, sticky panels, and other non-hero sections
+- Fixed/sticky overlay collision checks, including headers, cookie layers, chat widgets, and sticky rails
 - Cookie-overlay handling and repeatable consent state
-- Full-page, hero-only, and scroll-slice screenshot series
+- Hero, section, full-page, and scroll-slice screenshot series
 
 ## Why Sample First
 
@@ -93,6 +95,11 @@ The audit script is configured through environment variables:
 | `ROUTES` | auto-discovered from `out/**/index.html`, fallback `/` | Comma-separated route list |
 | `VIEWPORTS` | all presets | Comma-separated viewport preset names |
 | `CUSTOM_VIEWPORTS` | empty | Extra viewports as JSON or shorthand `name:widthxheight[:desktop|tablet|mobile]` |
+| `SECTIONS` | auto-discovered major sections | Comma-separated critical section selectors, for example `.reviews-section,.pricing-section,#kontakt` |
+| `SECTION_AUDIT` | `1` | Audit major sections for fixed/sticky overlay collisions |
+| `SECTION_SCROLL_MODE` | `natural` | `natural`, `direct`, or `both`; use `both` for anchor/header issues |
+| `SECTION_LIMIT` | `24` | Maximum auto-discovered sections per route |
+| `SECTION_SCREENSHOTS` | `0` | Capture viewport screenshots of section states in capture mode when set to `1` |
 | `CONSENT` | `0` | Set `1` to inject a localStorage consent payload |
 | `CONSENT_KEY` | `rw-cookie-consent` | Consent localStorage key |
 | `CONSENT_PAYLOAD` | versioned analytics/marketing denied JSON | Consent localStorage value |
@@ -101,6 +108,39 @@ The audit script is configured through environment variables:
 | `FULL` | `0` | Capture full-page screenshots in capture mode when set to `1` |
 | `SLICES` | `0` | Capture scroll slices in capture mode when set to `1` |
 | `CAPTURE_DELAY` | `450` | Wait time after load before screenshots/checks |
+
+## Section Audits
+
+Hero screenshots are not enough for a full responsive audit. Tablet issues often appear in midpage sections where long text, sticky sidebars, review cards, pricing cards, or fixed headers interact.
+
+Run a targeted section audit:
+
+```powershell
+$env:MODE = "audit"
+$env:CONSENT = "1"
+$env:ROUTES = "/"
+$env:VIEWPORTS = "ipad-mini-landscape-1024x768,ipad-air-landscape-1180x820,ipad-pro-12-portrait-1024x1366"
+$env:SECTIONS = ".reviews-section,.pricing-section,.faq-section"
+$env:SECTION_SCROLL_MODE = "both"
+node "$env:USERPROFILE\.codex\skills\ui-responsive-audit\scripts\ui-responsive-audit.mjs"
+```
+
+Capture section evidence as viewport screenshots:
+
+```powershell
+$env:MODE = "capture"
+$env:CONSENT = "1"
+$env:ROUTES = "/"
+$env:VIEWPORTS = "ipad-mini-landscape-1024x768,ipad-air-landscape-1180x820"
+$env:SECTIONS = ".reviews-section"
+$env:HERO = "0"
+$env:FULL = "0"
+$env:SLICES = "0"
+$env:SECTION_SCREENSHOTS = "1"
+node "$env:USERPROFILE\.codex\skills\ui-responsive-audit\scripts\ui-responsive-audit.mjs"
+```
+
+Section screenshots are viewport screenshots after scroll, not isolated element crops. That is intentional: fixed headers, cookie banners, chat widgets, and sticky rails must remain visible if they cover content.
 
 ## Viewport Presets
 
@@ -152,10 +192,11 @@ The manifest includes the route, viewport, URL, screenshot type, and dimensions 
 2. Run a small sample screenshot series.
 3. Review whether captures are stable, useful, and represent the real page state.
 4. Run audit mode over the full viewport/route matrix.
-5. Fix hard failures first: overflow, clipping, broken images, bad crop risk, overlap, and layering conflicts.
-6. Re-run audit mode on affected routes.
-7. Capture the final screenshot series for user review.
-8. Report exact audit paths, screenshot folders, and remaining risks.
+5. Run a section audit for critical midpage selectors, especially on tablet/iPad widths.
+6. Fix hard failures first: overflow, clipping, broken images, bad crop risk, overlap, fixed/sticky overlay collisions, and layering conflicts.
+7. Re-run audit mode on affected routes.
+8. Capture the final screenshot series for user review.
+9. Report exact audit paths, screenshot folders, and remaining risks.
 
 ## Local Validation
 

@@ -34,12 +34,16 @@ confirming that the capture state is useful.
    - Check hero crop, CTA visibility, nav density, first-fold proof/trust elements, image focal point, line breaks, and whether overlays sit above the image.
    - If a person image is used, the head/face must be visible unless an intentional art direction says otherwise. A body-only crop is a defect.
 
-5. **Run non-visual audit.**
+5. **Run non-visual and section audits.**
    - Use the script in `MODE=audit` for overflow, broken images, tap targets, hidden reduced-motion content, element occlusion, layering conflicts, and person-image crop risks.
+   - Keep `SECTION_AUDIT=1` unless the task is explicitly hero-only.
+   - Include midpage sections that commonly fail on tablets: reviews/testimonials, pricing, package cards, process steps, CTA bands, comparison grids, sticky panels, and media-over-card layouts.
+   - Check the normal scroll state, not only `scrollIntoViewIfNeeded`. Fixed headers, cookie layers, sticky rails, and chat widgets must not cover section content.
    - Treat audit findings as triage. Confirm likely false positives with targeted screenshots.
 
 6. **Fix and re-check only affected states.**
    - Re-capture the smallest useful set after each fix.
+   - For midpage defects, capture `SECTION_SCREENSHOTS=1` on the affected route/viewport set.
    - Do not regenerate a full screenshot series until sample and audit are clean.
 
 7. **Final deliverables.**
@@ -80,6 +84,13 @@ Useful environment:
 - `CUSTOM_VIEWPORTS='[{"name":"custom-820x1180","width":820,"height":1180,"device":"tablet"}]'`
   - Shorthand is also supported: `CUSTOM_VIEWPORTS="custom-820x1180:820x1180:tablet"`.
   - Unknown `VIEWPORTS` names must fail the run. Do not accept silently skipped breakpoints.
+- `SECTIONS=".reviews-section,.pricing-section,#kontakt"` or leave unset to auto-discover major sections.
+- `SECTION_AUDIT=1` to audit major sections for fixed/sticky overlay collisions.
+- `SECTION_SCROLL_MODE=natural|direct|both`
+  - Use `natural` for the normal user scroll state.
+  - Use `both` when anchor links, sticky headers, or section screenshots are suspected.
+- `SECTION_SCREENSHOTS=1` to capture viewport screenshots of section states in capture mode.
+- `SECTION_LIMIT=24`
 - `CONSENT=1`
 - `SERIES=hero-sample`
 - `HERO=1 FULL=0 SLICES=0`
@@ -105,6 +116,18 @@ $env:MODE='audit'
 node C:\Users\rapha\.codex\skills\ui-responsive-audit\scripts\ui-responsive-audit.mjs
 ```
 
+Example targeted section pass:
+
+```powershell
+$env:MODE='audit'
+$env:CONSENT='1'
+$env:ROUTES='/'
+$env:VIEWPORTS='ipad-mini-landscape-1024x768,ipad-air-landscape-1180x820,ipad-pro-12-portrait-1024x1366'
+$env:SECTIONS='.reviews-section,.pricing-section,.faq-section'
+$env:SECTION_SCROLL_MODE='both'
+node C:\Users\rapha\.codex\skills\ui-responsive-audit\scripts\ui-responsive-audit.mjs
+```
+
 ## Viewport Set
 
 Use common monitors plus real iPad classes:
@@ -124,6 +147,7 @@ Hard failures:
 - hidden content in `prefers-reduced-motion`
 - text/buttons visually occluded by another element
 - overlay content intended to sit above media but rendered underneath
+- fixed/sticky headers, cookie layers, chat widgets, or sticky rails covering midpage section content
 - person/portrait image crop risk where the top/head area is cut away
 
 Visual quality failures:
@@ -134,5 +158,6 @@ Visual quality failures:
 - full-page image downsampling hides detail; use viewport slices for mobile detail
 - screenshots captured during entrance animation
 - cookie/modal overlay covers the page in final QA screenshots
+- only hero screenshots were captured while midpage sections were untested
 
 For detailed triage rules, read `references/audit-method.md`.

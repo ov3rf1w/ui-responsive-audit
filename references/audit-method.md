@@ -6,8 +6,9 @@
 2. Non-visual geometry checks
 3. Person and hero image crop checks
 4. Layering and z-index checks
-5. Final screenshot strategy
-6. Reporting format
+5. Midpage section and scroll-state checks
+6. Final screenshot strategy
+7. Reporting format
 
 ## 1. Sample-first gate
 
@@ -87,11 +88,40 @@ When the audit finds overlap:
 3. If intentional, verify z-order and contrast with a cropped screenshot.
 4. If accidental, fix layout spacing, stacking context, or responsive composition.
 
-## 5. Final screenshot strategy
+## 5. Midpage section and scroll-state checks
+
+Do not treat hero screenshots as a complete responsiveness audit. Midpage sections often fail first on iPad and tablet widths.
+
+Always consider:
+- reviews/testimonials
+- pricing/package cards
+- process steps
+- FAQ/details lists
+- CTA bands
+- local SEO/text-heavy blocks
+- sticky sidebars/rails
+- cards over images or images under cards
+
+Use `SECTIONS` for known critical selectors. Leave it unset for automatic major-section discovery when doing a broader pass.
+
+Check two different states when a defect is plausible:
+- **natural scroll:** the user scrolls down into the section; auto-hiding headers should usually be hidden.
+- **direct scroll:** the browser jumps directly to the section; anchors and screenshots may reveal fixed-header collisions.
+
+Fixed/sticky overlay collisions should include:
+- site header over text/cards/buttons
+- cookie banner over final screenshots
+- chat widget over CTA/buttons
+- sticky rail covering content it should sit beside
+
+Use `SECTION_SCREENSHOTS=1` for affected routes and tablet viewports. These screenshots must be viewport screenshots after scroll, not isolated element screenshots, because fixed overlays disappear from isolated element crops.
+
+## 6. Final screenshot strategy
 
 Final screenshots should be useful, not maximal:
 
 - **Hero matrix:** all major routes/page types across common desktop, iPad, and mobile viewports.
+- **Section matrix:** critical midpage selectors on tablet/iPad widths plus one phone width.
 - **Mobile slices:** one readable mobile viewport (`393x852`) across all routes.
 - **Reduced motion:** one mobile reduced-motion pass, hero + key slices.
 - **Full-page overviews:** only for representative route types or pages changed in this task.
@@ -101,8 +131,9 @@ Avoid:
 - full-page mobile PNGs as the only proof
 - final series with cookie banners
 - captures before entrance animation settles
+- isolated element screenshots as the only proof for fixed/sticky overlay issues
 
-## 6. Reporting format
+## 7. Reporting format
 
 Report:
 
@@ -119,6 +150,7 @@ Automated audit:
 Screenshots:
 - sample path
 - final hero path
+- section screenshot path
 - mobile slices path
 - reduced motion path
 

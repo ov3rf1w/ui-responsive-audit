@@ -13,7 +13,11 @@ const SERIES = process.env.SERIES ? `-${process.env.SERIES.replace(/[^a-z0-9_-]/
 const CAPTURE_HERO = process.env.HERO !== "0";
 const CAPTURE_FULL = process.env.FULL === "1";
 const CAPTURE_SLICES = process.env.SLICES === "1";
+const CAPTURE_SECTIONS = process.env.SECTION_SCREENSHOTS === "1" || process.env.SECTION_SHOTS === "1";
 const CAPTURE_DELAY = Number(process.env.CAPTURE_DELAY || 1800);
+const SECTION_AUDIT = process.env.SECTION_AUDIT !== "0";
+const SECTION_LIMIT = Number(process.env.SECTION_LIMIT || 24);
+const SECTION_SCROLL_MODE = process.env.SECTION_SCROLL_MODE || "natural";
 
 const EXPORT_ROOT = path.resolve(projectRoot, process.env.EXPORT_ROOT || "out");
 
@@ -81,6 +85,9 @@ function selectViewports(allViewports) {
 const CUSTOM_VIEWPORTS = parseCustomViewports();
 const ALL_VIEWPORTS = [...PRESET_VIEWPORTS, ...CUSTOM_VIEWPORTS];
 const VIEWPORTS = selectViewports(ALL_VIEWPORTS);
+const SECTION_SELECTORS = process.env.SECTIONS
+  ? process.env.SECTIONS.split(",").map((selector) => selector.trim()).filter(Boolean)
+  : [];
 
 async function discoverRoutes() {
   if (process.env.ROUTES) {
@@ -170,6 +177,14 @@ async function gotoWithRetry(page, url) {
 
 function routeSlug(route) {
   return route === "/" ? "home" : route.replace(/^\/|\/$/g, "").replaceAll("/", "__");
+}
+
+function safeName(value) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64) || "section";
 }
 
 async function makeContext(browser, viewport, reducedMotion = false) {
@@ -353,6 +368,246 @@ async function getAudit(page) {
   });
 }
 
+async function sectionCandidates(page) {
+  return page.evaluate(
+    ({ selectors, limit }) => {
+      const visible = (el) => {
+        const style = getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+      };
+      const candidateElements = selectors.length
+        ? selectors.flatMap((selector) => [...document.querySelectorAll(selector)])
+        : [
+            ...document.querySelectorAll(
+              "[data-audit-section], main > section, section[id], section[class], main > div[id], main > div[class]",
+            ),
+          ];
+      const seen = new Set();
+      return candidateElements
+        .filter((el) => {
+          if (seen.has(el)) return false;
+          seen.add(el);
+          if (!visible(el)) return false;
+          const rect = el.getBoundingClientRect();
+          return rect.width >= 280 && rect.height >= 160;
+        })
+        .slice(0, limit)
+        .map((el, index) => {
+          const id = el.id ? `#${el.id}` : "";
+          const audit = el.getAttribute("data-audit-section") || "";
+          const heading = el.querySelector("h1,h2,h3")?.textContent?.replace(/\s+/g, " ").trim() || "";
+          const className = typeof el.className === "string" ? el.className.split(/\s+/).filter(Boolean).slice(0, 2).join(".") : "";
+          return {
+            index,
+            label: audit || id || heading || `${el.tagName.toLowerCase()}${className ? `.${className}` : ""}`,
+          };
+        });
+    },
+    { selectors: SECTION_SELECTORS, limit: SECTION_LIMIT },
+  );
+}
+
+async function scrollToSection(page, sectionIndex, mode) {
+  await page.evaluate(
+    ({ selectors, limit, sectionIndex, mode }) => {
+      const visible = (el) => {
+        const style = getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+      };
+      const candidateElements = selectors.length
+        ? selectors.flatMap((selector) => [...document.querySelectorAll(selector)])
+        : [
+            ...document.querySelectorAll(
+              "[data-audit-section], main > section, section[id], section[class], main > div[id], main > div[class]",
+            ),
+          ];
+      const seen = new Set();
+      const sections = candidateElements
+        .filter((el) => {
+          if (seen.has(el)) return false;
+          seen.add(el);
+          if (!visible(el)) return false;
+          const rect = el.getBoundingClientRect();
+          return rect.width >= 280 && rect.height >= 160;
+        })
+        .slice(0, limit);
+      const section = sections[sectionIndex];
+      if (!section) return;
+
+      const targetY = Math.max(0, section.getBoundingClientRect().top + window.scrollY - Math.round(window.innerHeight * 0.08));
+      if (mode === "direct") {
+        window.scrollTo(0, targetY);
+        window.dispatchEvent(new Event("scroll"));
+        return;
+      }
+
+      const approachY = Math.max(0, targetY - Math.round(window.innerHeight * 0.62));
+      window.scrollTo(0, approachY);
+      window.dispatchEvent(new Event("scroll"));
+      window.scrollTo(0, targetY);
+      window.dispatchEvent(new Event("scroll"));
+    },
+    { selectors: SECTION_SELECTORS, limit: SECTION_LIMIT, sectionIndex, mode },
+  );
+  await page.waitForTimeout(450);
+  await settle(page);
+}
+
+async function getSectionAudit(page, sectionIndex, label, scrollMode) {
+  return page.evaluate(
+    ({ selectors, limit, sectionIndex, label, scrollMode }) => {
+      const viewportWidth = document.documentElement.clientWidth;
+      const viewportHeight = window.innerHeight;
+      const visible = (el) => {
+        const style = getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        const opacity = Number.parseFloat(style.opacity || "1");
+        return (
+          style.display !== "none" &&
+          style.visibility !== "hidden" &&
+          opacity > 0.01 &&
+          rect.width > 0 &&
+          rect.height > 0 &&
+          rect.bottom > 0 &&
+          rect.top < viewportHeight &&
+          rect.right > 0 &&
+          rect.left < viewportWidth
+        );
+      };
+      const describe = (el) => {
+        const rect = el.getBoundingClientRect();
+        return {
+          tag: el.tagName.toLowerCase(),
+          id: el.id || "",
+          className: typeof el.className === "string" ? el.className.slice(0, 140) : "",
+          text: (el.innerText || el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 90),
+          x: Math.round(rect.x),
+          y: Math.round(rect.y),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+        };
+      };
+      const intersects = (a, b) =>
+        a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+      const area = (a, b) => {
+        const width = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left));
+        const height = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+        return width * height;
+      };
+
+      const candidateElements = selectors.length
+        ? selectors.flatMap((selector) => [...document.querySelectorAll(selector)])
+        : [
+            ...document.querySelectorAll(
+              "[data-audit-section], main > section, section[id], section[class], main > div[id], main > div[class]",
+            ),
+          ];
+      const seen = new Set();
+      const sections = candidateElements
+        .filter((el) => {
+          if (seen.has(el)) return false;
+          seen.add(el);
+          const style = getComputedStyle(el);
+          const rect = el.getBoundingClientRect();
+          return style.display !== "none" && style.visibility !== "hidden" && rect.width >= 280 && rect.height >= 160;
+        })
+        .slice(0, limit);
+      const section = sections[sectionIndex];
+      if (!section) return { index: sectionIndex, label, scrollMode, missing: true };
+
+      const sectionRect = section.getBoundingClientRect();
+      const targets = [...section.querySelectorAll("h1,h2,h3,h4,p,blockquote,a[href],button,article,[class*='card'],[class*='panel']")]
+        .filter((el) => visible(el))
+        .filter((el) => (el.innerText || el.textContent || "").trim() || /^(A|BUTTON|ARTICLE)$/.test(el.tagName))
+        .slice(0, 80);
+
+      const overlays = [...document.querySelectorAll("body *")]
+        .filter((el) => visible(el) && !section.contains(el))
+        .filter((el) => {
+          const position = getComputedStyle(el).position;
+          return position === "fixed" || position === "sticky";
+        })
+        .slice(0, 50);
+
+      const overlayCollisions = [];
+      for (const target of targets) {
+        const targetRect = target.getBoundingClientRect();
+        for (const overlay of overlays) {
+          const overlayRect = overlay.getBoundingClientRect();
+          if (!intersects(targetRect, overlayRect) || area(targetRect, overlayRect) < 64) continue;
+          const x = Math.max(0, Math.min(viewportWidth - 1, Math.max(targetRect.left, overlayRect.left) + 4));
+          const y = Math.max(0, Math.min(viewportHeight - 1, Math.max(targetRect.top, overlayRect.top) + 4));
+          const stack = document.elementsFromPoint(x, y);
+          const overlayIndex = stack.indexOf(overlay);
+          const targetIndex = stack.findIndex((node) => node === target || target.contains(node) || node.contains(target));
+          if (overlayIndex >= 0 && (targetIndex < 0 || overlayIndex < targetIndex)) {
+            overlayCollisions.push({
+              target: describe(target),
+              overlay: describe(overlay),
+              overlayPosition: getComputedStyle(overlay).position,
+              point: [Math.round(x), Math.round(y)],
+            });
+          }
+        }
+      }
+
+      const clippedText = [...section.querySelectorAll("*")]
+        .filter((el) => visible(el))
+        .filter((el) => (el.innerText || el.textContent || "").trim())
+        .filter((el) => {
+          const style = getComputedStyle(el);
+          if (!/(hidden|clip|auto|scroll)/.test(`${style.overflow}${style.overflowX}${style.overflowY}`)) return false;
+          return el.scrollWidth > el.clientWidth + 2 || el.scrollHeight > el.clientHeight + 2;
+        })
+        .slice(0, 20)
+        .map(describe);
+
+      const cookieLayer = [...document.querySelectorAll("[class*='cookie'],[id*='cookie'],[aria-label*='cookie' i]")]
+        .filter(visible)
+        .filter((el) => {
+          const style = getComputedStyle(el);
+          return style.position === "fixed" || el.getAttribute("role") === "dialog" || /cookie-layer|cookie-panel/i.test(String(el.className));
+        })
+        .map(describe)
+        .slice(0, 5);
+
+      return {
+        index: sectionIndex,
+        label,
+        scrollMode,
+        rect: {
+          x: Math.round(sectionRect.x),
+          y: Math.round(sectionRect.y),
+          width: Math.round(sectionRect.width),
+          height: Math.round(sectionRect.height),
+        },
+        fixedOrStickyOverlayCollisions: overlayCollisions.slice(0, 20),
+        clippedText,
+        cookieLayer,
+      };
+    },
+    { selectors: SECTION_SELECTORS, limit: SECTION_LIMIT, sectionIndex, label, scrollMode },
+  );
+}
+
+async function getSectionAudits(page) {
+  if (!SECTION_AUDIT) return [];
+
+  const modes = SECTION_SCROLL_MODE === "both" ? ["natural", "direct"] : [SECTION_SCROLL_MODE];
+  const sections = await sectionCandidates(page);
+  const audits = [];
+  for (const mode of modes) {
+    for (const section of sections) {
+      await scrollToSection(page, section.index, mode);
+      audits.push(await getSectionAudit(page, section.index, section.label, mode));
+    }
+  }
+  await page.evaluate(() => window.scrollTo(0, 0));
+  return audits;
+}
+
 async function runAudit(browser, routes) {
   const results = [];
   for (const viewport of VIEWPORTS) {
@@ -375,6 +630,7 @@ async function runAudit(browser, routes) {
         }
         await settle(page);
         const audit = await getAudit(page);
+        const sectionAudits = await getSectionAudits(page);
         results.push({
           route,
           viewport: viewport.name,
@@ -382,6 +638,7 @@ async function runAudit(browser, routes) {
           status: response.status?.() ?? null,
           consoleErrors: [...consoleErrors],
           pageErrors: [...pageErrors],
+          sectionAudits,
           ...audit,
         });
         consoleErrors.length = 0;
@@ -391,6 +648,17 @@ async function runAudit(browser, routes) {
     }
   }
   return results;
+}
+
+async function captureSectionScreenshots(page, routeDir, slug, route, viewport, manifest) {
+  const sections = await sectionCandidates(page);
+  for (const section of sections) {
+    await scrollToSection(page, section.index, "natural");
+    const file = path.join(routeDir, `${slug}__${viewport.name}__section-${String(section.index).padStart(2, "0")}-${safeName(section.label)}.png`);
+    await page.screenshot({ path: file, fullPage: false });
+    manifest.push({ route, viewport: viewport.name, type: "section", index: section.index, label: section.label, path: file });
+  }
+  await page.evaluate(() => window.scrollTo(0, 0));
 }
 
 async function capture(browser, routes) {
@@ -432,6 +700,9 @@ async function capture(browser, routes) {
         }
         await page.evaluate(() => window.scrollTo(0, 0));
       }
+      if (CAPTURE_SECTIONS) {
+        await captureSectionScreenshots(page, routeDir, slug, route, viewport, manifest);
+      }
     }
     await context.close();
   }
@@ -459,7 +730,8 @@ try {
       (result.reducedMotion && result.hiddenRevealCandidates?.length) ||
       result.occlusions?.length ||
       result.layerConflicts?.length ||
-      result.personCropRisks?.length,
+      result.personCropRisks?.length ||
+      result.sectionAudits?.some((section) => section.fixedOrStickyOverlayCollisions?.length || section.cookieLayer?.length),
     );
     const tapHints = results.filter((result) => result.smallTapTargets?.length);
     console.log(JSON.stringify({ reportPath, resultCount: results.length, failureCount: failures.length, tapHintCount: tapHints.length }, null, 2));

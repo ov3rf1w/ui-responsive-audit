@@ -94,8 +94,8 @@ The audit script is configured through environment variables:
 | `VIEWPORTS` | all presets | Comma-separated viewport preset names |
 | `CUSTOM_VIEWPORTS` | empty | Extra viewports as JSON or shorthand `name:widthxheight[:desktop|tablet|mobile]` |
 | `CONSENT` | `0` | Set `1` to inject a localStorage consent payload |
-| `CONSENT_KEY` | `pt-cookie-consent-v1` | Consent localStorage key |
-| `CONSENT_PAYLOAD` | analytics/marketing denied JSON | Consent localStorage value |
+| `CONSENT_KEY` | `rw-cookie-consent` | Consent localStorage key |
+| `CONSENT_PAYLOAD` | versioned analytics/marketing denied JSON | Consent localStorage value |
 | `REDUCE` | `1` | Emulate reduced motion |
 | `HERO` | `1` | Capture first viewport screenshots in capture mode |
 | `FULL` | `0` | Capture full-page screenshots in capture mode when set to `1` |

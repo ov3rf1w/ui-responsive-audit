@@ -36,6 +36,8 @@ confirming that the capture state is useful.
 
 5. **Run non-visual and section audits.**
    - Use the script in `MODE=audit` for overflow, broken images, tap targets, hidden reduced-motion content, element occlusion, layering conflicts, person-image crop risks, and static content collisions.
+   - Review the generated `summary-*.json`, `findings-*.json`, `report-*.md`, and `report-*.html`; do not rely only on `failureCount`.
+   - Treat the coverage matrix as mandatory. Missing route/viewport/section states are audit failures, not neutral results.
    - Keep `SECTION_AUDIT=1` unless the task is explicitly hero-only.
    - Include midpage sections that commonly fail on tablets: reviews/testimonials, pricing, package cards, process steps, CTA bands, comparison grids, sticky panels, and media-over-card layouts.
    - Check the normal scroll state, not only `scrollIntoViewIfNeeded`. Fixed headers, cookie layers, sticky rails, and chat widgets must not cover section content.
@@ -80,6 +82,7 @@ Useful environment:
 - `BASE=http://localhost:3100`
 - `ROUTES="/,/standorte/,/standorte/eisenstadt/"`
 - Leave `ROUTES` unset to auto-discover routes from `out/**/index.html`.
+- `CONFIG=ui-responsive-audit.config.json` for optional framework-neutral project settings.
 - `EXPORT_ROOT=out`
 - `VIEWPORTS="desktop-1440x900,ipad-mini-portrait-768x1024,phone-393x852"`
 - `CUSTOM_VIEWPORTS='[{"name":"custom-820x1180","width":820,"height":1180,"device":"tablet"}]'`
@@ -92,6 +95,7 @@ Useful environment:
   - Use `both` when anchor links, sticky headers, or section screenshots are suspected.
 - `SECTION_SCREENSHOTS=1` to capture viewport screenshots of section states in capture mode.
 - `SECTION_LIMIT=24`
+- `EVIDENCE=1` to write annotated finding screenshots with bounding boxes. Set `EVIDENCE=0` to disable.
 - `CONSENT=1`
 - `SERIES=hero-sample`
 - `HERO=1 FULL=0 SLICES=0`
@@ -129,6 +133,26 @@ $env:SECTION_SCROLL_MODE='both'
 node C:\Users\rapha\.codex\skills\ui-responsive-audit\scripts\ui-responsive-audit.mjs
 ```
 
+Optional project config (`ui-responsive-audit.config.json`):
+
+```json
+{
+  "routes": ["/", "/standorte/"],
+  "criticalSections": [".hero", ".reviews-section", ".pricing-section"],
+  "customViewports": [{ "name": "wide-low-1920x820", "width": 1920, "height": 820, "device": "desktop" }],
+  "personImageSelectors": [".hero img", ".location-detail-hero__media img"],
+  "ignoreFindings": ["badge over image"]
+}
+```
+
+Audit mode writes:
+- `audit-*.json`: raw per-route/per-viewport data
+- `findings-*.json`: severity-ranked findings
+- `summary-*.json`: counts, coverage matrix, output paths
+- `report-*.md`: reviewable Markdown report
+- `report-*.html`: browser-readable report
+- `evidence-*`: annotated finding screenshots when `EVIDENCE=1`
+
 ## Viewport Set
 
 Use common monitors plus real iPad classes:
@@ -142,6 +166,7 @@ Use common monitors plus real iPad classes:
 ## What to Catch
 
 Hard failures:
+- missing expected route/viewport/section coverage
 - horizontal page overflow
 - broken images
 - sub-44px tap targets on touch viewports

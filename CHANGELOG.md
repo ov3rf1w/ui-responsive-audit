@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0 - 2026-06-21
+
+- Added severity-ranked `findings-*.json` output.
+- Added `summary-*.json` with coverage matrix and expected-count checks.
+- Added Markdown and HTML audit reports.
+- Added annotated evidence screenshots for visual section findings.
+- Added optional framework-neutral project config via `ui-responsive-audit.config.json`.
+- Added capture expected-count guard for screenshot series.
+
 ## 0.3.0 - 2026-06-21
 
 - Added static sibling-content collision detection inside section audits.

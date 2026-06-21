@@ -7,8 +7,9 @@
 3. Person and hero image crop checks
 4. Layering and z-index checks
 5. Midpage section and scroll-state checks
-6. Final screenshot strategy
-7. Reporting format
+6. Evaluation and reporting
+7. Final screenshot strategy
+8. Reporting format
 
 ## 1. Sample-first gate
 
@@ -123,7 +124,36 @@ Static section collisions should include:
 
 Use `SECTION_SCREENSHOTS=1` for affected routes and tablet viewports. These screenshots must be viewport screenshots after scroll, not isolated element screenshots, because fixed overlays disappear from isolated element crops.
 
-## 6. Final screenshot strategy
+## 6. Evaluation and reporting
+
+The audit is incomplete unless the output includes a coverage matrix and severity-ranked findings.
+
+Coverage must include:
+- route
+- viewport
+- reduced-motion state
+- section count
+- navigation status
+
+Classify findings by severity:
+- **critical:** broken route, missing expected coverage, horizontal overflow, occluded content, static content overlap, fixed/sticky overlay collision, unusable CTA
+- **high:** person crop risk, broken image, page error, cookie layer in final state, layer conflict
+- **medium:** small tap targets, possible clipped section text, suspicious but still usable layout
+- **low/info:** informational hints that need human review
+
+Every finding should carry:
+- route
+- viewport
+- motion state
+- section label when applicable
+- scroll state when applicable
+- message
+- confidence
+- evidence screenshot path when available
+
+Use annotated evidence screenshots for actual visual defects. Mark the target and the covering/overlapping element with colored boxes so the reviewer does not need to hunt through a full-page capture.
+
+## 7. Final screenshot strategy
 
 Final screenshots should be useful, not maximal:
 
@@ -140,7 +170,7 @@ Avoid:
 - captures before entrance animation settles
 - isolated element screenshots as the only proof for fixed/sticky overlay issues
 
-## 7. Reporting format
+## 8. Reporting format
 
 Report:
 
@@ -153,6 +183,10 @@ Automated audit:
 - failure count
 - tap target count
 - report path
+- findings path
+- summary path
+- HTML/Markdown report path
+- coverage issue count
 
 Screenshots:
 - sample path

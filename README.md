@@ -17,6 +17,8 @@ The skill is built for Structiva-style UI QA: production builds, real browser re
 - Midpage section checks for reviews, pricing, CTA bands, card grids, sticky panels, and other non-hero sections
 - Fixed/sticky overlay collision checks, including headers, cookie layers, chat widgets, and sticky rails
 - Static sibling-content collision checks, including oversized headings crossing into paragraphs, cards, tables, or definition lists
+- Coverage matrix, severity-ranked findings, annotated evidence screenshots, and Markdown/HTML reports
+- Optional framework-neutral project config via `ui-responsive-audit.config.json`
 - Cookie-overlay handling and repeatable consent state
 - Hero, section, full-page, and scroll-slice screenshot series
 
@@ -93,6 +95,7 @@ The audit script is configured through environment variables:
 | `MODE` | `audit` | `audit` for DOM checks, `capture` for screenshots |
 | `OUT` | `output/playwright/ui-responsive-audit` | Output directory inside the target project |
 | `EXPORT_ROOT` | target project root | Where output is written |
+| `CONFIG` | `ui-responsive-audit.config.json` | Optional project config path |
 | `ROUTES` | auto-discovered from `out/**/index.html`, fallback `/` | Comma-separated route list |
 | `VIEWPORTS` | all presets | Comma-separated viewport preset names |
 | `CUSTOM_VIEWPORTS` | empty | Extra viewports as JSON or shorthand `name:widthxheight[:desktop|tablet|mobile]` |
@@ -101,6 +104,7 @@ The audit script is configured through environment variables:
 | `SECTION_SCROLL_MODE` | `natural` | `natural`, `direct`, or `both`; use `both` for anchor/header issues |
 | `SECTION_LIMIT` | `24` | Maximum auto-discovered sections per route |
 | `SECTION_SCREENSHOTS` | `0` | Capture viewport screenshots of section states in capture mode when set to `1` |
+| `EVIDENCE` | `1` | Write annotated finding screenshots with bounding boxes; set `0` to disable |
 | `CONSENT` | `0` | Set `1` to inject a localStorage consent payload |
 | `CONSENT_KEY` | `rw-cookie-consent` | Consent localStorage key |
 | `CONSENT_PAYLOAD` | versioned analytics/marketing denied JSON | Consent localStorage value |
@@ -145,6 +149,20 @@ Section screenshots are viewport screenshots after scroll, not isolated element 
 
 The section audit also compares visible content rectangles inside a section. This catches issues that do not create page overflow, such as a huge display heading visually entering a neighboring text column while `overflow: visible` keeps the browser from reporting clipping.
 
+## Project Config
+
+The skill is framework-neutral. It audits rendered browser output, so it works with Next.js, Astro, static HTML, Vite, custom servers, and similar stacks. Add a project config only when generic discovery is not precise enough:
+
+```json
+{
+  "routes": ["/", "/standorte/"],
+  "criticalSections": [".hero", ".reviews-section", ".pricing-section"],
+  "customViewports": [{ "name": "wide-low-1920x820", "width": 1920, "height": 820, "device": "desktop" }],
+  "personImageSelectors": [".hero img", ".location-detail-hero__media img"],
+  "ignoreFindings": ["badge over image"]
+}
+```
+
 ## Viewport Presets
 
 Desktop:
@@ -181,6 +199,18 @@ Audit mode writes a JSON report:
 output/playwright/ui-responsive-audit/audit-<timestamp>.json
 ```
 
+It also writes:
+
+```text
+output/playwright/ui-responsive-audit/findings-<timestamp>.json
+output/playwright/ui-responsive-audit/summary-<timestamp>.json
+output/playwright/ui-responsive-audit/report-<timestamp>.md
+output/playwright/ui-responsive-audit/report-<timestamp>.html
+output/playwright/ui-responsive-audit/evidence-<timestamp>/
+```
+
+The summary contains the coverage matrix. Findings are severity-ranked as `critical`, `high`, `medium`, `low`, or `info`.
+
 Capture mode writes PNG screenshot series plus a manifest:
 
 ```text
@@ -195,11 +225,12 @@ The manifest includes the route, viewport, URL, screenshot type, and dimensions 
 2. Run a small sample screenshot series.
 3. Review whether captures are stable, useful, and represent the real page state.
 4. Run audit mode over the full viewport/route matrix.
-5. Run a section audit for critical midpage selectors, especially on tablet/iPad widths.
-6. Fix hard failures first: overflow, clipping, broken images, bad crop risk, static content overlap, fixed/sticky overlay collisions, and layering conflicts.
-7. Re-run audit mode on affected routes.
-8. Capture the final screenshot series for user review.
-9. Report exact audit paths, screenshot folders, and remaining risks.
+5. Review the coverage matrix and treat missing route/viewport/section states as audit failures.
+6. Run a section audit for critical midpage selectors, especially on tablet/iPad widths.
+7. Fix hard failures first: overflow, clipping, broken images, bad crop risk, static content overlap, fixed/sticky overlay collisions, and layering conflicts.
+8. Re-run audit mode on affected routes.
+9. Capture the final screenshot series for user review.
+10. Report exact audit paths, screenshot folders, and remaining risks.
 
 ## Local Validation
 

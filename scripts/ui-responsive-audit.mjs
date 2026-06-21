@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { mkdir, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const projectRoot = path.resolve(process.env.PROJECT_ROOT || process.cwd());
@@ -15,11 +15,13 @@ const CAPTURE_FULL = process.env.FULL === "1";
 const CAPTURE_SLICES = process.env.SLICES === "1";
 const CAPTURE_SECTIONS = process.env.SECTION_SCREENSHOTS === "1" || process.env.SECTION_SHOTS === "1";
 const CAPTURE_DELAY = Number(process.env.CAPTURE_DELAY || 1800);
+const EVIDENCE = process.env.EVIDENCE !== "0";
 const SECTION_AUDIT = process.env.SECTION_AUDIT !== "0";
 const SECTION_LIMIT = Number(process.env.SECTION_LIMIT || 24);
 const SECTION_SCROLL_MODE = process.env.SECTION_SCROLL_MODE || "natural";
 
 const EXPORT_ROOT = path.resolve(projectRoot, process.env.EXPORT_ROOT || "out");
+const CONFIG = await loadConfig();
 
 const PRESET_VIEWPORTS = [
   { name: "desktop-1920x1080", width: 1920, height: 1080, device: "desktop" },
@@ -82,16 +84,36 @@ function selectViewports(allViewports) {
   return requested.map((name) => byName.get(name));
 }
 
-const CUSTOM_VIEWPORTS = parseCustomViewports();
+async function loadConfig() {
+  const configPath = path.resolve(
+    projectRoot,
+    process.env.CONFIG || process.env.UI_AUDIT_CONFIG || "ui-responsive-audit.config.json",
+  );
+  try {
+    return JSON.parse(await readFile(configPath, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+const CUSTOM_VIEWPORTS = [...(CONFIG.customViewports || []), ...parseCustomViewports()];
 const ALL_VIEWPORTS = [...PRESET_VIEWPORTS, ...CUSTOM_VIEWPORTS];
 const VIEWPORTS = selectViewports(ALL_VIEWPORTS);
 const SECTION_SELECTORS = process.env.SECTIONS
   ? process.env.SECTIONS.split(",").map((selector) => selector.trim()).filter(Boolean)
-  : [];
+  : CONFIG.sections || CONFIG.criticalSections || [];
+const IGNORE_FINDINGS = [
+  ...(CONFIG.ignoreFindings || []),
+  ...(CONFIG.intentionalOverlaps || []),
+].map((value) => String(value).toLowerCase());
+const PERSON_IMAGE_SELECTORS = CONFIG.personImageSelectors || [];
 
 async function discoverRoutes() {
   if (process.env.ROUTES) {
     return process.env.ROUTES.split(",").map((route) => route.trim()).filter(Boolean);
+  }
+  if (CONFIG.routes?.length) {
+    return CONFIG.routes;
   }
 
   const routes = [];
@@ -201,7 +223,7 @@ async function makeContext(browser, viewport, reducedMotion = false) {
 }
 
 async function getAudit(page) {
-  return page.evaluate(() => {
+  return page.evaluate(({ personImageSelectors }) => {
     const viewportWidth = document.documentElement.clientWidth;
     const viewportHeight = window.innerHeight;
     const docWidth = Math.max(document.documentElement.scrollWidth, document.body?.scrollWidth || 0);
@@ -326,9 +348,15 @@ async function getAudit(page) {
     }
 
     const personPattern = /\b(portrait|coach|trainer|raphael|founder|owner|team|person|mann|frau|athlet|athlete)\b/i;
-    const personCropRisks = [...document.images]
+    const configuredPersonImages = personImageSelectors.flatMap((selector) => [...document.querySelectorAll(selector)]);
+    const candidatePersonImages = new Set([
+      ...[...document.images].filter((img) => personPattern.test(`${img.alt || ""} ${img.currentSrc || img.src || ""}`)),
+      ...configuredPersonImages.filter((el) => el instanceof HTMLImageElement),
+      ...configuredPersonImages.flatMap((el) => [...el.querySelectorAll("img")]),
+    ]);
+
+    const personCropRisks = [...candidatePersonImages]
       .filter((img) => visible(img) && img.naturalWidth > 0 && img.naturalHeight > 0)
-      .filter((img) => personPattern.test(`${img.alt || ""} ${img.currentSrc || img.src || ""}`))
       .flatMap((img) => {
         const rect = img.getBoundingClientRect();
         if (rect.top > viewportHeight || rect.bottom < 0) return [];
@@ -365,7 +393,7 @@ async function getAudit(page) {
       layerConflicts,
       personCropRisks,
     };
-  });
+  }, { personImageSelectors: PERSON_IMAGE_SELECTORS });
 }
 
 async function sectionCandidates(page) {
@@ -639,7 +667,76 @@ async function getSectionAudit(page, sectionIndex, label, scrollMode) {
   );
 }
 
-async function getSectionAudits(page) {
+function boxesFromSectionAudit(sectionAudit) {
+  const boxes = [];
+  for (const collision of sectionAudit.fixedOrStickyOverlayCollisions || []) {
+    boxes.push({ ...collision.target, label: "covered target", color: "#ef4444" });
+    boxes.push({ ...collision.overlay, label: "fixed/sticky overlay", color: "#facc15" });
+  }
+  for (const collision of sectionAudit.staticContentCollisions || []) {
+    boxes.push({ ...collision.first, label: "content A", color: "#ef4444" });
+    boxes.push({ ...collision.second, label: "content B", color: "#facc15" });
+  }
+  for (const layer of sectionAudit.cookieLayer || []) {
+    boxes.push({ ...layer, label: "cookie layer", color: "#f97316" });
+  }
+  return boxes;
+}
+
+async function captureAnnotatedEvidence(page, file, boxes) {
+  if (!EVIDENCE || boxes.length === 0) return null;
+
+  await mkdir(path.dirname(file), { recursive: true });
+  await page.evaluate((items) => {
+    document.querySelectorAll("[data-ui-audit-evidence]").forEach((node) => node.remove());
+    const root = document.createElement("div");
+    root.setAttribute("data-ui-audit-evidence", "root");
+    Object.assign(root.style, {
+      position: "fixed",
+      inset: "0",
+      zIndex: "2147483647",
+      pointerEvents: "none",
+    });
+    for (const item of items) {
+      const box = document.createElement("div");
+      box.setAttribute("data-ui-audit-evidence", "box");
+      Object.assign(box.style, {
+        position: "fixed",
+        left: `${item.x}px`,
+        top: `${item.y}px`,
+        width: `${item.width}px`,
+        height: `${item.height}px`,
+        border: `3px solid ${item.color || "#ef4444"}`,
+        boxShadow: "0 0 0 2px rgba(0,0,0,.72)",
+      });
+      const label = document.createElement("div");
+      label.textContent = item.label || item.tag || "audit";
+      Object.assign(label.style, {
+        position: "absolute",
+        left: "0",
+        top: "-24px",
+        maxWidth: "260px",
+        padding: "3px 6px",
+        background: item.color || "#ef4444",
+        color: "#050505",
+        font: "700 12px/1.2 system-ui, sans-serif",
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+      });
+      box.append(label);
+      root.append(box);
+    }
+    document.body.append(root);
+  }, boxes);
+  await page.screenshot({ path: file, fullPage: false });
+  await page.evaluate(() => {
+    document.querySelectorAll("[data-ui-audit-evidence]").forEach((node) => node.remove());
+  });
+  return file;
+}
+
+async function getSectionAudits(page, evidenceContext = null) {
   if (!SECTION_AUDIT) return [];
 
   const modes = SECTION_SCROLL_MODE === "both" ? ["natural", "direct"] : [SECTION_SCROLL_MODE];
@@ -648,14 +745,23 @@ async function getSectionAudits(page) {
   for (const mode of modes) {
     for (const section of sections) {
       await scrollToSection(page, section.index, mode);
-      audits.push(await getSectionAudit(page, section.index, section.label, mode));
+      const audit = await getSectionAudit(page, section.index, section.label, mode);
+      const boxes = boxesFromSectionAudit(audit);
+      if (evidenceContext && boxes.length) {
+        const file = path.join(
+          evidenceContext.root,
+          `${evidenceContext.slug}__${evidenceContext.viewport}__${evidenceContext.reducedMotion ? "reduced" : "motion"}__section-${String(section.index).padStart(2, "0")}-${safeName(section.label)}-${safeName(mode)}.png`,
+        );
+        audit.evidencePath = await captureAnnotatedEvidence(page, file, boxes);
+      }
+      audits.push(audit);
     }
   }
   await page.evaluate(() => window.scrollTo(0, 0));
   return audits;
 }
 
-async function runAudit(browser, routes) {
+async function runAudit(browser, routes, evidenceRoot = null) {
   const results = [];
   for (const viewport of VIEWPORTS) {
     for (const reducedMotion of [false, true]) {
@@ -677,7 +783,12 @@ async function runAudit(browser, routes) {
         }
         await settle(page);
         const audit = await getAudit(page);
-        const sectionAudits = await getSectionAudits(page);
+        const sectionAudits = await getSectionAudits(page, evidenceRoot ? {
+          root: evidenceRoot,
+          slug: routeSlug(route),
+          viewport: viewport.name,
+          reducedMotion,
+        } : null);
         results.push({
           route,
           viewport: viewport.name,
@@ -755,7 +866,323 @@ async function capture(browser, routes) {
   }
 
   await writeFile(path.join(root, "manifest.json"), JSON.stringify(manifest, null, 2));
-  return { root, count: manifest.length };
+  const expectedBase =
+    routes.length *
+    VIEWPORTS.length *
+    Number(CAPTURE_HERO || 0) +
+    routes.length *
+    VIEWPORTS.length *
+    Number(CAPTURE_FULL || 0);
+  const expectedSectionMinimum = CAPTURE_SECTIONS && SECTION_SELECTORS.length
+    ? routes.length * VIEWPORTS.length * SECTION_SELECTORS.length
+    : 0;
+  const expectedMinimumCount = expectedBase + expectedSectionMinimum;
+  const coverageIssues = [];
+  if (manifest.length < expectedMinimumCount) {
+    coverageIssues.push(`Expected at least ${expectedMinimumCount} screenshots but captured ${manifest.length}.`);
+  }
+  return { root, count: manifest.length, expectedMinimumCount, coverageIssues };
+}
+
+function severityRank(severity) {
+  return { critical: 0, high: 1, medium: 2, low: 3, info: 4 }[severity] ?? 5;
+}
+
+function isIgnored(finding) {
+  if (!IGNORE_FINDINGS.length) return false;
+  const haystack = [
+    finding.type,
+    finding.route,
+    finding.viewport,
+    finding.sectionLabel,
+    finding.message,
+    finding.selector,
+  ].filter(Boolean).join(" ").toLowerCase();
+  return IGNORE_FINDINGS.some((token) => haystack.includes(token));
+}
+
+function pushFinding(findings, finding) {
+  if (isIgnored(finding)) return;
+  findings.push({
+    id: `F${String(findings.length + 1).padStart(4, "0")}`,
+    confidence: finding.confidence || "high",
+    ...finding,
+  });
+}
+
+function classifyFindings(results, coverageIssues = []) {
+  const findings = [];
+  for (const issue of coverageIssues) {
+    pushFinding(findings, {
+      severity: "critical",
+      type: "coverage",
+      message: issue,
+      confidence: "high",
+    });
+  }
+
+  for (const result of results) {
+    const base = { route: result.route, viewport: result.viewport, reducedMotion: result.reducedMotion };
+    if (result.navigationError) {
+      pushFinding(findings, { ...base, severity: "critical", type: "navigation", message: result.navigationError });
+      continue;
+    }
+    if (result.status >= 400) {
+      pushFinding(findings, { ...base, severity: "critical", type: "http-status", message: `HTTP ${result.status}` });
+    }
+    if (result.horizontalOverflow) {
+      pushFinding(findings, {
+        ...base,
+        severity: "critical",
+        type: "horizontal-overflow",
+        message: `Document width ${result.docWidth}px exceeds viewport ${result.viewportWidth}px`,
+        details: result.overflowElements || [],
+      });
+    }
+    for (const image of result.brokenImages || []) {
+      pushFinding(findings, { ...base, severity: "high", type: "broken-image", message: image.src, details: image });
+    }
+    for (const error of result.pageErrors || []) {
+      pushFinding(findings, { ...base, severity: "high", type: "page-error", message: error });
+    }
+    if (result.reducedMotion) {
+      for (const item of result.hiddenRevealCandidates || []) {
+        pushFinding(findings, {
+          ...base,
+          severity: "high",
+          type: "hidden-reveal-reduced-motion",
+          message: `Reveal content remains hidden under reduced motion: ${item.text || item.className || item.tag}`,
+          selector: item.className,
+          details: item,
+        });
+      }
+    }
+    for (const item of result.occlusions || []) {
+      pushFinding(findings, {
+        ...base,
+        severity: "critical",
+        type: "occlusion",
+        message: `${item.target?.tag || "element"} is covered by ${item.covering?.tag || "element"}`,
+        selector: item.target?.className,
+        details: item,
+      });
+    }
+    for (const item of result.layerConflicts || []) {
+      pushFinding(findings, {
+        ...base,
+        severity: "high",
+        type: "layer-conflict",
+        message: `Media appears above text/control: ${item.target?.text || item.target?.className || item.target?.tag}`,
+        selector: item.target?.className,
+        details: item,
+      });
+    }
+    for (const item of result.personCropRisks || []) {
+      pushFinding(findings, {
+        ...base,
+        severity: "high",
+        type: "person-crop-risk",
+        message: `Potential head/face crop risk: top crop ratio ${item.topCropRatio}`,
+        selector: item.image?.className,
+        details: item,
+      });
+    }
+    for (const item of result.smallTapTargets || []) {
+      pushFinding(findings, {
+        ...base,
+        severity: "medium",
+        type: "tap-target",
+        message: `Small tap target ${item.width}x${item.height}: ${item.text || item.className || item.tag}`,
+        selector: item.className,
+        details: item,
+      });
+    }
+    for (const section of result.sectionAudits || []) {
+      const sectionBase = { ...base, sectionLabel: section.label, scrollMode: section.scrollMode, evidencePath: section.evidencePath };
+      for (const item of section.fixedOrStickyOverlayCollisions || []) {
+        pushFinding(findings, {
+          ...sectionBase,
+          severity: "critical",
+          type: "fixed-sticky-overlay-collision",
+          message: `${item.overlay?.tag || "overlay"} covers ${item.target?.tag || "target"} in ${section.label}`,
+          selector: item.target?.className,
+          details: item,
+        });
+      }
+      for (const item of section.staticContentCollisions || []) {
+        pushFinding(findings, {
+          ...sectionBase,
+          severity: "critical",
+          type: "static-content-collision",
+          message: `${item.first?.tag || "content"} overlaps ${item.second?.tag || "content"} in ${section.label}`,
+          selector: item.first?.className || item.second?.className,
+          details: item,
+        });
+      }
+      for (const item of section.cookieLayer || []) {
+        pushFinding(findings, {
+          ...sectionBase,
+          severity: "high",
+          type: "cookie-layer-visible",
+          message: `Cookie layer visible in final audit state: ${item.className || item.tag}`,
+          selector: item.className,
+          details: item,
+        });
+      }
+      for (const item of section.clippedText || []) {
+        pushFinding(findings, {
+          ...sectionBase,
+          severity: "medium",
+          type: "section-clipped-text",
+          message: `Possible clipped text in ${section.label}: ${item.text || item.className || item.tag}`,
+          selector: item.className,
+          details: item,
+        });
+      }
+    }
+  }
+  return findings.sort((a, b) => severityRank(a.severity) - severityRank(b.severity));
+}
+
+function summarizeCoverage(routes, results) {
+  const expectedPageAudits = routes.length * VIEWPORTS.length * 2;
+  const coverageIssues = [];
+  if (results.length !== expectedPageAudits) {
+    coverageIssues.push(`Expected ${expectedPageAudits} page audits but received ${results.length}.`);
+  }
+
+  const matrix = [];
+  for (const route of routes) {
+    for (const viewport of VIEWPORTS) {
+      for (const reducedMotion of [false, true]) {
+        const result = results.find((entry) => entry.route === route && entry.viewport === viewport.name && entry.reducedMotion === reducedMotion);
+        if (!result) {
+          coverageIssues.push(`Missing audit result for ${route} / ${viewport.name} / reducedMotion=${reducedMotion}.`);
+          matrix.push({ route, viewport: viewport.name, reducedMotion, status: "missing", sectionCount: 0 });
+          continue;
+        }
+        matrix.push({
+          route,
+          viewport: viewport.name,
+          reducedMotion,
+          status: result.navigationError ? "navigation-error" : result.status >= 400 ? `http-${result.status}` : "audited",
+          sectionCount: result.sectionAudits?.length || 0,
+        });
+      }
+    }
+  }
+  return {
+    expectedPageAudits,
+    actualPageAudits: results.length,
+    coverageIssues,
+    matrix,
+  };
+}
+
+function summarizeFindings(findings) {
+  const counts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
+  for (const finding of findings) counts[finding.severity] = (counts[finding.severity] || 0) + 1;
+  return counts;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function markdownReport({ summary, coverage, findings, rawReportPath, findingsPath, summaryPath }) {
+  const rows = findings.map((finding) =>
+    `| ${finding.id} | ${finding.severity} | ${finding.type} | ${finding.route || ""} | ${finding.viewport || ""} | ${finding.sectionLabel || ""} | ${finding.message.replaceAll("|", "\\|")} | ${finding.evidencePath || ""} |`,
+  ).join("\n");
+  const coverageRows = coverage.matrix.map((entry) =>
+    `| ${entry.route} | ${entry.viewport} | ${entry.reducedMotion} | ${entry.status} | ${entry.sectionCount} |`,
+  ).join("\n");
+
+  return `# UI Responsive Audit Report
+
+Generated: ${new Date().toISOString()}
+
+## Summary
+
+- Raw report: \`${rawReportPath}\`
+- Findings JSON: \`${findingsPath}\`
+- Summary JSON: \`${summaryPath}\`
+- Result count: ${summary.resultCount}
+- Findings: ${summary.findingCount}
+- Critical: ${summary.severity.critical}
+- High: ${summary.severity.high}
+- Medium: ${summary.severity.medium}
+- Coverage issues: ${coverage.coverageIssues.length}
+
+## Coverage
+
+| Route | Viewport | Reduced Motion | Status | Sections |
+| --- | --- | --- | --- | --- |
+${coverageRows || "| - | - | - | - | - |"}
+
+## Findings
+
+| ID | Severity | Type | Route | Viewport | Section | Message | Evidence |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+${rows || "| - | - | - | - | - | - | No findings | - |"}
+`;
+}
+
+function htmlReport({ summary, coverage, findings, rawReportPath, findingsPath, summaryPath }) {
+  const findingRows = findings.map((finding) => `
+    <tr>
+      <td>${escapeHtml(finding.id)}</td>
+      <td><strong>${escapeHtml(finding.severity)}</strong></td>
+      <td>${escapeHtml(finding.type)}</td>
+      <td>${escapeHtml(finding.route)}</td>
+      <td>${escapeHtml(finding.viewport)}</td>
+      <td>${escapeHtml(finding.sectionLabel)}</td>
+      <td>${escapeHtml(finding.message)}</td>
+      <td>${finding.evidencePath ? `<code>${escapeHtml(finding.evidencePath)}</code>` : ""}</td>
+    </tr>`).join("");
+  const coverageRows = coverage.matrix.map((entry) => `
+    <tr>
+      <td>${escapeHtml(entry.route)}</td>
+      <td>${escapeHtml(entry.viewport)}</td>
+      <td>${escapeHtml(entry.reducedMotion)}</td>
+      <td>${escapeHtml(entry.status)}</td>
+      <td>${escapeHtml(entry.sectionCount)}</td>
+    </tr>`).join("");
+
+  return `<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>UI Responsive Audit Report</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 32px; color: #111; background: #fafafa; }
+  table { border-collapse: collapse; width: 100%; margin: 18px 0 32px; background: white; }
+  th, td { border: 1px solid #ddd; padding: 8px; text-align: left; vertical-align: top; font-size: 13px; }
+  th { background: #111; color: white; }
+  code { font-size: 12px; word-break: break-all; }
+  .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .summary div { background: white; border: 1px solid #ddd; padding: 14px; }
+</style>
+<body>
+  <h1>UI Responsive Audit Report</h1>
+  <p>Generated: ${escapeHtml(new Date().toISOString())}</p>
+  <div class="summary">
+    <div><strong>Results</strong><br>${summary.resultCount}</div>
+    <div><strong>Findings</strong><br>${summary.findingCount}</div>
+    <div><strong>Critical</strong><br>${summary.severity.critical}</div>
+    <div><strong>High</strong><br>${summary.severity.high}</div>
+    <div><strong>Medium</strong><br>${summary.severity.medium}</div>
+    <div><strong>Coverage Issues</strong><br>${coverage.coverageIssues.length}</div>
+  </div>
+  <p>Raw: <code>${escapeHtml(rawReportPath)}</code><br>Findings: <code>${escapeHtml(findingsPath)}</code><br>Summary: <code>${escapeHtml(summaryPath)}</code></p>
+  <h2>Coverage</h2>
+  <table><thead><tr><th>Route</th><th>Viewport</th><th>Reduced Motion</th><th>Status</th><th>Sections</th></tr></thead><tbody>${coverageRows}</tbody></table>
+  <h2>Findings</h2>
+  <table><thead><tr><th>ID</th><th>Severity</th><th>Type</th><th>Route</th><th>Viewport</th><th>Section</th><th>Message</th><th>Evidence</th></tr></thead><tbody>${findingRows || '<tr><td colspan="8">No findings</td></tr>'}</tbody></table>
+</body>
+</html>`;
 }
 
 await mkdir(OUT, { recursive: true });
@@ -765,27 +1192,40 @@ try {
   if (MODE === "capture") {
     console.log(JSON.stringify(await capture(browser, routes), null, 2));
   } else {
-    const results = await runAudit(browser, routes);
-    const reportPath = path.resolve(OUT, `audit-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const evidenceRoot = path.resolve(OUT, `evidence-${stamp}`);
+    const results = await runAudit(browser, routes, EVIDENCE ? evidenceRoot : null);
+    const reportPath = path.resolve(OUT, `audit-${stamp}.json`);
+    const findingsPath = path.resolve(OUT, `findings-${stamp}.json`);
+    const summaryPath = path.resolve(OUT, `summary-${stamp}.json`);
+    const markdownPath = path.resolve(OUT, `report-${stamp}.md`);
+    const htmlPath = path.resolve(OUT, `report-${stamp}.html`);
     await writeFile(reportPath, JSON.stringify(results, null, 2));
-    const failures = results.filter((result) =>
-      result.navigationError ||
-      result.status >= 400 ||
-      result.horizontalOverflow ||
-      result.brokenImages?.length ||
-      result.pageErrors?.length ||
-      (result.reducedMotion && result.hiddenRevealCandidates?.length) ||
-      result.occlusions?.length ||
-      result.layerConflicts?.length ||
-      result.personCropRisks?.length ||
-      result.sectionAudits?.some((section) =>
-        section.fixedOrStickyOverlayCollisions?.length ||
-        section.staticContentCollisions?.length ||
-        section.cookieLayer?.length,
-      ),
-    );
+    const coverage = summarizeCoverage(routes, results);
+    const findings = classifyFindings(results, coverage.coverageIssues);
+    await writeFile(findingsPath, JSON.stringify(findings, null, 2));
+    const severity = summarizeFindings(findings);
+    const failures = findings.filter((finding) => ["critical", "high"].includes(finding.severity));
     const tapHints = results.filter((result) => result.smallTapTargets?.length);
-    console.log(JSON.stringify({ reportPath, resultCount: results.length, failureCount: failures.length, tapHintCount: tapHints.length }, null, 2));
+    const summary = {
+      reportPath,
+      findingsPath,
+      summaryPath,
+      markdownPath,
+      htmlPath,
+      evidenceRoot: EVIDENCE ? evidenceRoot : null,
+      resultCount: results.length,
+      findingCount: findings.length,
+      failureCount: failures.length,
+      tapHintCount: tapHints.length,
+      severity,
+      coverage,
+      configLoaded: Object.keys(CONFIG).length > 0,
+    };
+    await writeFile(summaryPath, JSON.stringify(summary, null, 2));
+    await writeFile(markdownPath, markdownReport({ summary, coverage, findings, rawReportPath: reportPath, findingsPath, summaryPath }));
+    await writeFile(htmlPath, htmlReport({ summary, coverage, findings, rawReportPath: reportPath, findingsPath, summaryPath }));
+    console.log(JSON.stringify(summary, null, 2));
   }
 } finally {
   await browser.close();

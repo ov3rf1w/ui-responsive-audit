@@ -1,0 +1,4 @@
+interface:
+  display_name: "UI-responsive-audit"
+  short_description: "Responsive UI QA with Playwright"
+  default_prompt: "Use $ui-responsive-audit to audit this site across desktop, iPad, tablet, and mobile viewports."

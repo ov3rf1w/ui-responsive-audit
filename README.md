@@ -1,0 +1,188 @@
+# UI-responsive-audit
+
+`UI-responsive-audit` is a Codex skill for running disciplined, Playwright-based responsiveness audits on websites and web apps. It combines a sample-first screenshot workflow with DOM geometry checks so teams can find layout failures before generating hundreds of screenshots.
+
+The skill is built for Structiva-style UI QA: production builds, real browser rendering, practical breakpoint coverage, and focused follow-up captures for the exact states that need human review.
+
+## What It Checks
+
+- Horizontal overflow across desktop, tablet, iPad, and phone viewports
+- Broken or invisible images
+- Text clipping and suspicious zero-size content
+- Tap-target issues on touch devices
+- Reveal/animation content that remains hidden after the page settles
+- Element overlap and z-index conflicts
+- Text and UI layers that accidentally fall behind media
+- Person-image crop risk, especially head and face crops on portrait/tablet layouts
+- Cookie-overlay handling and repeatable consent state
+- Full-page, hero-only, and scroll-slice screenshot series
+
+## Why Sample First
+
+Large screenshot matrices are expensive to review and often become useless if the capture setup is wrong. This workflow starts with a small representative set:
+
+- home page
+- one visual detail route
+- one content/legal route
+- desktop
+- iPad portrait and landscape
+- phone portrait
+
+Only after the sample is useful should the full audit/capture matrix run.
+
+## Install As A Codex Skill
+
+Clone this repository into your Codex skills directory:
+
+```powershell
+git clone https://github.com/ov3rf1w/ui-responsive-audit.git "$env:USERPROFILE\.codex\skills\ui-responsive-audit"
+```
+
+Restart Codex or reload skills. Then ask Codex for `$ui-responsive-audit` or request a responsive UI audit.
+
+## Requirements
+
+- Node.js 20+
+- A website or app that can be served locally
+- `playwright-core` available in the audited project
+- A production build when possible
+
+The audit script intentionally resolves `playwright-core` from the target project, not from this skill repository. This keeps browser automation aligned with the app being audited.
+
+## Quick Start
+
+From the target website repository:
+
+```powershell
+npm run build
+node "$env:USERPROFILE\.codex\skills\ui-responsive-audit\scripts\static-serve.mjs"
+```
+
+In another terminal:
+
+```powershell
+$env:BASE = "http://127.0.0.1:3100"
+$env:MODE = "audit"
+$env:CONSENT = "1"
+node "$env:USERPROFILE\.codex\skills\ui-responsive-audit\scripts\ui-responsive-audit.mjs"
+```
+
+For a screenshot sample:
+
+```powershell
+$env:MODE = "capture"
+$env:SERIES = "sample"
+$env:ROUTES = "/,/standorte/,/datenschutz/"
+$env:VIEWPORTS = "desktop-1440x900,ipad-mini-portrait-768x1024,ipad-mini-landscape-1024x768,phone-393x852"
+$env:HERO = "1"
+$env:FULL = "0"
+$env:SLICES = "0"
+node "$env:USERPROFILE\.codex\skills\ui-responsive-audit\scripts\ui-responsive-audit.mjs"
+```
+
+## Configuration
+
+The audit script is configured through environment variables:
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `BASE` | `http://127.0.0.1:3100` | Base URL to audit |
+| `MODE` | `audit` | `audit` for DOM checks, `capture` for screenshots |
+| `OUT` | `output/playwright/ui-responsive-audit` | Output directory inside the target project |
+| `EXPORT_ROOT` | target project root | Where output is written |
+| `ROUTES` | auto-discovered from `out/**/index.html`, fallback `/` | Comma-separated route list |
+| `VIEWPORTS` | all presets | Comma-separated viewport preset names |
+| `CUSTOM_VIEWPORTS` | empty | Extra viewports, format `name:widthxheight,name2:widthxheight` |
+| `CONSENT` | `0` | Set `1` to inject a localStorage consent payload |
+| `CONSENT_KEY` | `pt-cookie-consent-v1` | Consent localStorage key |
+| `CONSENT_PAYLOAD` | analytics/marketing denied JSON | Consent localStorage value |
+| `REDUCE` | `1` | Emulate reduced motion |
+| `HERO` | `1` | Capture first viewport screenshots in capture mode |
+| `FULL` | `0` | Capture full-page screenshots in capture mode |
+| `SLICES` | `0` | Capture scroll slices in capture mode |
+| `CAPTURE_DELAY` | `450` | Wait time after load before screenshots/checks |
+
+## Viewport Presets
+
+Desktop:
+
+- `desktop-1920x1080`
+- `desktop-1536x864`
+- `desktop-1440x900`
+- `laptop-1366x768`
+- `small-desktop-1280x720`
+
+Tablet and iPad:
+
+- `ipad-mini-portrait-768x1024`
+- `ipad-mini-landscape-1024x768`
+- `ipad-air-portrait-820x1180`
+- `ipad-air-landscape-1180x820`
+- `ipad-pro-11-portrait-834x1194`
+- `ipad-pro-11-landscape-1194x834`
+- `ipad-pro-12-portrait-1024x1366`
+- `ipad-pro-12-landscape-1366x1024`
+
+Phones:
+
+- `phone-large-430x932`
+- `phone-medium-393x852`
+- `iphone-12-390x844`
+- `phone-small-360x800`
+
+## Outputs
+
+Audit mode writes a JSON report:
+
+```text
+output/playwright/ui-responsive-audit/audit-<timestamp>.json
+```
+
+Capture mode writes PNG screenshot series plus a manifest:
+
+```text
+output/playwright/ui-responsive-audit/shots-<series>-<timestamp>/
+```
+
+The manifest includes the route, viewport, URL, screenshot type, and dimensions for every capture.
+
+## Recommended Audit Process
+
+1. Build and serve the production output.
+2. Run a small sample screenshot series.
+3. Review whether captures are stable, useful, and represent the real page state.
+4. Run audit mode over the full viewport/route matrix.
+5. Fix hard failures first: overflow, clipping, broken images, bad crop risk, overlap, and layering conflicts.
+6. Re-run audit mode on affected routes.
+7. Capture the final screenshot series for user review.
+8. Report exact audit paths, screenshot folders, and remaining risks.
+
+## Local Validation
+
+Inside this repository:
+
+```powershell
+npm run validate
+```
+
+This checks the JavaScript syntax for the bundled scripts.
+
+For Codex skill validation:
+
+```powershell
+python "$env:USERPROFILE\.codex\skills\.system\skill-creator\scripts\quick_validate.py" .
+```
+
+## Contributing
+
+Issues and pull requests should include:
+
+- target app context
+- route and viewport where the issue occurs
+- relevant audit JSON excerpt or screenshot
+- expected behavior
+- actual behavior
+
+## License
+
+MIT

@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Validate scripts
+        run: npm run validate
+
+      - name: Validate skill shape
+        shell: python
+        run: |
+          from pathlib import Path
+          required = [
+              "SKILL.md",
+              "agents/openai.yaml",
+              "references/audit-method.md",
+              "scripts/ui-responsive-audit.mjs",
+              "scripts/static-serve.mjs",
+          ]
+          missing = [path for path in required if not Path(path).exists()]
+          if missing:
+              raise SystemExit(f"Missing required files: {missing}")
+          body = Path("SKILL.md").read_text(encoding="utf-8")
+          if "name: ui-responsive-audit" not in body:
+              raise SystemExit("SKILL.md must declare name: ui-responsive-audit")

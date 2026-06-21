@@ -1,0 +1,27 @@
+{
+  "name": "ui-responsive-audit",
+  "version": "0.1.0",
+  "description": "Codex skill for Playwright-based responsive UI audits across desktop, tablet, iPad, and mobile breakpoints.",
+  "type": "module",
+  "license": "MIT",
+  "private": false,
+  "scripts": {
+    "validate": "node --check scripts/ui-responsive-audit.mjs && node --check scripts/static-serve.mjs",
+    "audit": "node scripts/ui-responsive-audit.mjs",
+    "serve": "node scripts/static-serve.mjs"
+  },
+  "keywords": [
+    "codex-skill",
+    "playwright",
+    "responsive-design",
+    "ui-audit",
+    "visual-regression",
+    "qa"
+  ],
+  "peerDependencies": {
+    "playwright-core": ">=1.40.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
